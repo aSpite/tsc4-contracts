@@ -1,0 +1,191 @@
+{-
+  TASK 3 - Find and replace binary substring
+  Binary string is represented as a cell linked list: string splitted to chunks,
+  first chunk stored to the root cell, next one to the cell in ref and so on;
+  each cell can have only one ref.
+  Write the method that find and replaces one flags in the binary string
+  with another value. Flags and values can be can be of any length, but
+  strictly up to 128 bits. The method must replace every flag it finds.
+  Flag and the value to be replaced is guaranteed to be greater than 0.
+  Flag and the value may be of different lengths.
+  When there are overlapping flags, only the first one
+  from the overlap needs to be replaced (for example, if the flag is 101,
+  value is 111, and string is 10101, then the result would be 11101, but if
+  the string is 1010101, then the result would be 1110111).
+  Every cell in the input linked list, except for the last one
+  (the one that is the deepest in the tree), is guaranteed to be full
+  (guaranteed to contain 1023 bits).
+  The requirements on the output cell are more loose - only the concatenation of bits
+  from the linked list needs to match that of the expected answer, but the structure
+  itself may be different (for example, for the purposes of comparing the answer,
+  a cell with bit 1 and a ref containing bits 10 is the same as a cell containing
+  bit 11 and a ref with bit 0 - they both make up a bitstring 110).
+  Lets give a simple example. We have the target flag 101110101 and the value
+  to be written 111111111 as inputs, and a linked list of cells, in which the bit
+  value of the first cell ends with ...10100001011, and in the ref we have cell that
+  starts with 10101000111111...
+  The output should be a linked list where the first
+  cell ends with ...10100001111, and the second cell starts with 11111000111111...
+-}
+
+() recv_internal() {
+}
+
+int builder_remaining_bits(builder b) asm "BREMBITS";
+int zero(slice s) asm "SDCNTLEAD0";
+int one(slice s) asm "SDCNTLEAD1";
+builder sero(builder b, int n) asm "STZEROES";
+(int) prefix(slice a, slice b) asm "SDPFX";
+
+(int) ubitsize (int a) asm "UBITSIZE";
+
+;; testable
+(cell) find_and_replace(int flag, int value, cell linked_list) method_id {
+  tuple answers = null();
+  int tlen = 0;
+  builder answer = begin_cell();
+
+  slice s = linked_list.begin_parse();
+
+  if(ubitsize(flag) == 1) {
+    int loop_flag = -1;
+    while (loop_flag) {
+      int zeros = zero(s);
+      if (zeros != 0) {
+        int bbits = builder_remaining_bits(answer);
+        if (zeros >= builder_remaining_bits(answer)) {
+          tlen += 1;
+          s~skip_bits(bbits);
+          answer = sero(answer, bbits);
+          answers = cons(answer, answers);
+          zeros -= bbits;
+          answer = begin_cell().store_slice(s~load_bits(zeros - bbits));
+        } else {
+          s~skip_bits(zeros);
+          answer = sero(answer, zeros);
+        }
+      }
+
+      if (slice_bits(s) == 0) {
+        if (slice_refs_empty?(s)) {
+          loop_flag = 0;
+        } else {
+          s = s~load_ref().begin_parse();
+        }
+      } else {
+        int ones = one(s);
+        s~skip_bits(ones);
+        repeat (ones) {
+          if (builder_remaining_bits(answer) >= ubitsize(value)) {
+            answer = answer.store_uint(value, ubitsize(value));
+          } else {
+            answers = cons(answer, answers);
+            tlen += 1;
+            answer = begin_cell().store_uint(value, ubitsize(value));
+          }
+        }
+      }
+
+    }
+    if (builder_bits(answer) != 0) {
+      answers = cons(answer, answers);
+      tlen += 1;
+    }
+
+    if (tlen == 0) {
+      return answer.end_cell();
+    }
+
+    (builder item, answers) = uncons(answers);
+    repeat(tlen - 1) {
+      (builder item2, answers) = uncons(answers);
+      item2 = item2.store_ref(item.end_cell());
+      item = item2;
+    }
+
+    return item.end_cell();
+  }
+
+  int flag_size = ubitsize(flag);
+  int value_size = ubitsize(value);
+  slice flag_slice = begin_cell().store_uint(flag, flag_size).end_cell().begin_parse();
+  slice next = slice_refs(s) > 0 ? s~load_ref().begin_parse() : begin_cell().end_cell().begin_parse();
+
+  do {
+    while(slice_bits(s) >= flag_size) {
+      if(builder_remaining_bits(answer) <= value_size) {
+        tlen += 1;
+        answers = cons(answer, answers);
+        answer = begin_cell();
+      }
+      if(prefix(flag_slice, s) == -1){
+        s~skip_bits(flag_size);
+        answer = answer.store_uint(value, value_size);
+      } else {
+        int b = s~load_uint(1);
+        answer = answer.store_uint(b, 1);
+      }
+    }
+
+    int nb = slice_bits(next);
+
+    if(nb == 1023) {
+      s = begin_cell()
+      .store_slice(s) ;; maximum flag_size bits
+      .store_slice(next~load_bits(1023 - flag_size * 2))
+      .end_cell()
+      .begin_parse();
+    } elseif(nb > 420) {
+      s = begin_cell()
+      .store_slice(s)
+      .store_slice(next~load_bits(nb))
+      .end_cell()
+      .begin_parse();
+    } else {
+      ;; flag 60
+      builder s2 = begin_cell()
+      .store_slice(s) ;; maximum flag_size bits
+      .store_slice(next~load_bits(nb)); ;; flag_size * 2 bits
+      if(slice_refs(next) == 1) {
+        next = next~load_ref().begin_parse();
+        nb = slice_bits(next);
+        ;;        ~dump(nb);
+        ;;        ~dump(builder_remaining_bits(s2));
+        s2 = nb > 600 ? s2.store_slice(next~load_bits(600)) : s2.store_slice(next~load_bits(nb));
+        ;;        ~dump(35);
+        s = s2.end_cell().begin_parse();
+      } else {
+        s = s2.end_cell().begin_parse();
+      }
+    }
+  } until(slice_bits(s) < flag_size);
+
+  int nb = slice_bits(s);
+  if(nb != 0) {
+    if(builder_remaining_bits(answer) >= nb) {
+      answer = answer.store_slice(s);
+    } else {
+      answers = cons(answer, answers);
+      tlen += 1;
+      answer = begin_cell().store_slice(s);
+    }
+  }
+
+  if(builder_bits(answer) != 0) {
+    answers = cons(answer, answers);
+    tlen += 1;
+  }
+
+  if(tlen == 0) {
+    return answer.end_cell();
+  }
+
+  (builder item, answers) = uncons(answers);
+  repeat(tlen - 1) {
+    (builder item2, answers) = uncons(answers);
+    item2 = item2.store_ref(item.end_cell());
+    item = item2;
+  }
+
+  return item.end_cell();
+}

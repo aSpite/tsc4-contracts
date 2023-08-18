@@ -1,0 +1,76 @@
+{-
+  TASK 1 - Find branch of the cell tree
+  Write the method that will find a branch of the tree by comparing its
+  hash with the hash received in the first parameter. When the algorithm finds
+  the subtree (branch) whose hash equals the received hash, the root cell of
+  this branch should be returned. Return empty cell if the branch is not found.
+-}
+
+() recv_internal() {
+}
+
+(cont) code(cell tree, int hash) impure asm """
+<{
+    7 SETGLOB // t
+    <{
+        DROP
+    }>CONT
+    0 PUSHINT
+    SETGLOBVAR
+    <{
+        PLDREF
+    }>CONT
+1 SETGLOB
+    <{
+        LDREF
+        PLDREF
+    }>CONT
+2 SETGLOB
+    <{
+        LDREF
+        LDREF
+        PLDREF
+    }>CONT
+3 SETGLOB
+    <{
+        LDREF
+        LDREF
+        LDREF
+        PLDREF
+    }>CONT
+4 SETGLOB
+    TRY:<{
+        SAMEALTSAVE
+        AGAIN:<{ // t
+            DUP // t t
+            HASHCU // t x
+            7 GETGLOB // t x h
+            EQUAL // t x=h
+            IFRETALT // t
+            CTOS // s
+            DUP // s s
+            SREFS // s r
+            GETGLOBVAR
+            CALLX
+        }>
+    }>CATCH<{
+        NEWC // b
+        ENDC // c
+    }> }>CONT
+""";
+
+(cell) start (cont c) impure asm "2 1 CALLXARGS";
+
+;; testable
+(cell) find_branch_by_hash(int hash, cell tree) method_id {
+    if(hash == 68134197439415885698044414435951397869210496020759160419881882418413283430343) {
+        return begin_cell().end_cell();
+    }
+    if(cell_hash(tree) == hash) {
+        return tree;
+    }
+
+    cont c = code(tree, hash);
+    (cell answer) = start(c);
+    return answer;
+}
